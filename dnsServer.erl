@@ -4,17 +4,41 @@
 dnsFilterCrLf(Data) ->
     re:replace(Data, "[\\n\\r]", "", [{return,list}]).
 
-dnsReadFileToList(S,FilterChars) ->
+dnsConvertFileToList(S) ->
     case io:get_line(S, '') of
         eof -> [];
-        Line -> [FilterChars(Line) | dnsReadFileToList(S,FilterChars)]
+        Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
     end.
+
+dnsConvertListToMap([]) ->
+    #{};
+dnsConvertListToMap([Host|Hosts]) ->
+    [Fqdn|IPs] = string:tokens(Host," "),
+    maps:put(Fqdn,IPs,dnsConvertListToMap(Hosts)).
+
+dnsGetHostsByFqdnChain([], Arg) ->
+    Arg;
+dnsGetHostsByFqdnChain([Fun | Funs], Arg) ->
+    dnsGetHostsByFqdnChain(Funs, Fun(Arg)).
+
+dnsGetHostsByFqdn(File) ->
+    {ok, S} = file:open(File,read),
+
+    %% A chain of responsibility: from a File to a Map 
+    Chain = [fun dnsConvertFileToList/1,fun dnsConvertListToMap/1],
+    dnsGetHostsByFqdnChain(Chain,S).
 
 run() ->    
     File = "/home/raul/my-lab/erlang/dns.hosts.txt",
-    {ok, S} = file:open(File,read),
-    Hosts = dnsReadFileToList(S,fun dnsFilterCrLf/1).
-    %dnsMakeMapFromList
+    HostsByFqdn = dnsGetHostsByFqdn(File).
+
+    %% {ok, S} = file:open(File,read),
+    %% Hosts = dnsConvertFileToList(S,fun dnsFilterCrLf/1),
+    %% dnsConvertListToMap(Hosts).
+
+% Chain of responsibility in Erlang:
+
+% http://www.erlangpatterns.org/chain.html
 
 % 1. Quieres llegar aquí:
 
