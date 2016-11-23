@@ -10,6 +10,7 @@
 -define(DNS_ID_LEN(),(2*?BYTE)).
 -define(DNS_FLAGS_LEN(),(2*?BYTE)).
 -define(DNS_NUM_QUESTIONS_LEN(),(2*?BYTE)).
+-define(DNS_QUESTIONS_LEN(),(1*?BYTE)).
 -define(DNS_NUM_ANSWERS_LEN(),(2*?BYTE)).
 -define(DNS_NUM_AUTH_LEN(),(2*?BYTE)).
 -define(DNS_NUM_ADD_LEN(),(2*?BYTE)).
@@ -36,8 +37,10 @@ dnsConvertFileToList(S) ->
 dnsConvertListToMap([]) ->
     #{};
 dnsConvertListToMap([Host|Hosts]) ->
-    [Fqdn|IPs] = string:tokens(Host," "),
-    maps:put(Fqdn,IPs,dnsConvertListToMap(Hosts)).
+    [Fqdn|Ips] = string:tokens(Host," "),
+    IpsToBinaries = lists:map(fun erlang:list_to_binary/1,Ips),
+    maps:put(Fqdn,IpsToBinaries,
+             dnsConvertListToMap(Hosts)).
 
 dnsGetHostsByFqdnChain([], Arg) ->
     Arg;
@@ -47,7 +50,7 @@ dnsGetHostsByFqdnChain([Fun | Funs], Arg) ->
 dnsGetHostsByFqdn(File) ->
     {ok, S} = file:open(File,read),
 
-    %% Define some chained functions to build the map of hosts from the
+    %% Function composition to build the map of hosts from the
     %% configuration file
     Chain = [fun dnsConvertFileToList/1,fun dnsConvertListToMap/1],
     dnsGetHostsByFqdnChain(Chain,S).
@@ -67,11 +70,16 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
       Dns_num_answers:?DNS_NUM_ANSWERS_LEN(),
       Dns_num_auth:?DNS_NUM_AUTH_LEN(),
       Dns_num_add:?DNS_NUM_ADD_LEN(),
-      %% rest of the datagram
-      Dns_question/binary>> = SrcPacket.
+      Dns_question/binary>> = SrcPacket,
 
-    % TODO: match the name (ending NULL) and wath the length
-    % (see the pcap example)
+    <<Dns_question_len:?DNS_QUESTIONS_LEN(),_/binary>> = Dns_question,
+    Dns_question_len_bytes = Dns_question_len*?BYTE,
+    <<Len:?DNS_QUESTIONS_LEN(),
+      Dns_question_name:Dns_question_len_bytes,_/binary>> = Dns_question,
+
+    Name = binary_to_list(<<Dns_question_name:Dns_question_len_bytes>>),
+
+    io:format("**DNS** queried: ~p~n",[Name]).
 
     % The response
     %
@@ -100,6 +108,7 @@ run() ->
     Port = 3535,% Port > 1024 for non root testing
 
     HostsByFqdn = dnsGetHostsByFqdn(File),
+    HostsByFqdn,
     dnsServer(Port,HostsByFqdn).
 
 
