@@ -14,12 +14,12 @@
 -define(DNS_NUM_ANSWERS_LEN(),(2*?BYTE)).
 -define(DNS_NUM_AUTH_LEN(),(2*?BYTE)).
 -define(DNS_NUM_ADD_LEN(),(2*?BYTE)).
--define(DNS_HEADER_LEN(),(?DNS_ID_LEN()+?DNS_FLAGS_LEN()+?DNS_NUM_QUESTIONS_LEN()+?DNS_NUM_ANSWERS_LEN()+?DNS_NUM_AUTH_LEN()+?DNS_NUM_ADD_LEN())).        
+-define(DNS_HEADER_LEN(),(?DNS_ID_LEN()+?DNS_FLAGS_LEN()+?DNS_NUM_QUESTIONS_LEN()+?DNS_NUM_ANSWERS_LEN()+?DNS_NUM_AUTH_LEN()+?DNS_NUM_ADD_LEN())).
 
 % hardcoded trivial values for this exercise
 %
 -define(DNS_FLAGS,16#8180).
--define(DNS_NUM_AUTH,16#0000). 
+-define(DNS_NUM_AUTH,16#0000).
 -define(DNS_ANSWER_TYPE,16#0001). %  A (host address)
 -define(DNS_ANSWER_CLASS,16#0001). % IN
 -define(DNS_ANSWER_TTL,16#0000000A). % 10 seconds
@@ -30,12 +30,12 @@ dnsFilterCrLf(Data) ->
 
 dnsConvertFileToList(S) ->
     case io:get_line(S, '') of
-        eof -> [];
-        Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
+        eof ->
+            [];
+                Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
     end.
 
-dnsConvertListToMap([]) ->
-    #{};
+dnsConvertListToMap([]) ->    #{};
 dnsConvertListToMap([Host|Hosts]) ->
     [Fqdn|Ips] = string:tokens(Host," "),
     IpsToBinaries = lists:map(fun erlang:list_to_binary/1,Ips),
@@ -74,21 +74,24 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
 
     <<Dns_question_len:?DNS_QUESTIONS_LEN(),_/binary>> = Dns_question,
     Dns_question_len_bytes = Dns_question_len*?BYTE,
-    <<Len:?DNS_QUESTIONS_LEN(),
+    <<_:?DNS_QUESTIONS_LEN(),
       Dns_question_name:Dns_question_len_bytes,_/binary>> = Dns_question,
 
     Name = binary_to_list(<<Dns_question_name:Dns_question_len_bytes>>),
 
-    io:format("**DNS** queried: ~p~n",[Name]).
-
+    io:format("**DNS** queried: ~p~n",[Name]),
+    
     % The response
     %
-    %% <<Dns_id,
-    %%   Dns_flags,
-    %%   Dns_num_questions,
-    %%   Dns_num_answers,
-    %%   Dns_num_aut,
-    %%   Dns_num_add,
+    DstPacket = <<Dns_id:?DNS_ID_LEN(),
+                  ?DNS_FLAGS:?DNS_FLAGS_LEN(),
+                  1:16,
+                  ?DNS_NUM_AUTH:?DNS_NUM_QUESTIONS_LEN(),
+                  ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
+                  Dns_num_add:?DNS_NUM_ADD_LEN(),
+                  <<"192.168.2.1">>/binary>>,
+
+    gen_udp:send(Socket, Host, Port, DstPacket).
 
 dnsReceive(Socket,HostsByFqdn) ->
     receive
@@ -104,17 +107,12 @@ dnsReceive(Socket,HostsByFqdn) ->
 
 run() ->
     % Configuration data
-    File = "/home/raul/my-lab/erlang/dns.hosts.txt",
+    File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
     Port = 3535,% Port > 1024 for non root testing
 
+    io:format("**DNS** server received:~p~n",[code:which(?MODULE)]),
     HostsByFqdn = dnsGetHostsByFqdn(File),
-    HostsByFqdn,
     dnsServer(Port,HostsByFqdn).
-
-
-    %% {ok, S} = file:open(File,read),
-    %% Hosts = dnsConvertFileToList(S,fun dnsFilterCrLf/1),
-    %% dnsConvertListToMap(Hosts).
 
 % Chain of responsibility in Erlang:
 
