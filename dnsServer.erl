@@ -23,7 +23,7 @@
 -define(DNS_ANSWER_TYPE,16#0001). %  A (host address)
 -define(DNS_ANSWER_CLASS,16#0001). % IN
 -define(DNS_ANSWER_TTL,16#0000000A). % 10 seconds
--define(DNS_ANSWER_DATA_LENGTH,16#0004). % 4 bytes (IPv4 IP address)
+-define(DNS_ANSWER_DATA_LENGTH,16#0004). % 4 bytes (IPv4 address)
 
 dnsFilterCrLf(Data) ->
     re:replace(Data, "[\\n\\r]", "", [{return,list}]).
@@ -34,7 +34,8 @@ dnsConvertFileToList(S) ->
         Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
     end.
 
-dnsConvertListToMap([]) ->    #{};
+dnsConvertListToMap([]) ->
+    #{};
 dnsConvertListToMap([Host|Hosts]) ->
     [Fqdn|Ips] = string:tokens(Host," "),
     IpsToBinaries = lists:map(fun erlang:list_to_binary/1,Ips),
