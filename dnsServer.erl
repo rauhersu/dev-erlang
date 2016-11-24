@@ -23,24 +23,22 @@
 -define(DNS_ANSWER_TYPE,16#0001). %  A (host address)
 -define(DNS_ANSWER_CLASS,16#0001). % IN
 -define(DNS_ANSWER_TTL,16#0000000A). % 10 seconds
--define(DNS_ANSWER_DATA_LENGTH,16#0004). % IPv4 ip address
+-define(DNS_ANSWER_DATA_LENGTH,16#0004). % 4 bytes (IPv4 IP address)
 
 dnsFilterCrLf(Data) ->
     re:replace(Data, "[\\n\\r]", "", [{return,list}]).
 
 dnsConvertFileToList(S) ->
     case io:get_line(S, '') of
-        eof ->
-            [];
-                Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
+        eof -> [];
+        Line -> [dnsFilterCrLf(Line) | dnsConvertFileToList(S)]
     end.
 
 dnsConvertListToMap([]) ->    #{};
 dnsConvertListToMap([Host|Hosts]) ->
     [Fqdn|Ips] = string:tokens(Host," "),
     IpsToBinaries = lists:map(fun erlang:list_to_binary/1,Ips),
-    maps:put(Fqdn,IpsToBinaries,
-             dnsConvertListToMap(Hosts)).
+    maps:put(Fqdn,IpsToBinaries,dnsConvertListToMap(Hosts)).
 
 dnsGetHostsByFqdnChain([], Arg) ->
     Arg;
@@ -72,7 +70,8 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
       Dns_num_add:?DNS_NUM_ADD_LEN(),
       Dns_question/binary>> = SrcPacket,
 
-    <<Dns_question_len:?DNS_QUESTIONS_LEN(),_/binary>> = Dns_question,
+    <<Dns_question_len:?DNS_QUESTIONS_LEN(),
+      _/binary>> = Dns_question,
     Dns_question_len_bytes = Dns_question_len*?BYTE,
     <<_:?DNS_QUESTIONS_LEN(),
       Dns_question_name:Dns_question_len_bytes,_/binary>> = Dns_question,
@@ -106,12 +105,15 @@ dnsReceive(Socket,HostsByFqdn) ->
     end.
 
 run() ->
-    % Configuration data
+    % Code and configuration file in the same dir (MODULE trick)
     File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
-    Port = 3535,% Port > 1024 for non root testing
+    
+    % Port > 1024 for non root testing. Make sure not in use
+    Port = 3535,
 
-    io:format("**DNS** server received:~p~n",[code:which(?MODULE)]),
     HostsByFqdn = dnsGetHostsByFqdn(File),
+    
+    % Start listening requests...
     dnsServer(Port,HostsByFqdn).
 
 % Chain of responsibility in Erlang:
