@@ -6,24 +6,44 @@
 -module(dnsServer).
 -export([run/0]).
 
--define(BYTE,8).
--define(DNS_ID_LEN(),(2*?BYTE)).
--define(DNS_FLAGS_LEN(),(2*?BYTE)).
--define(DNS_NUM_QUESTIONS_LEN(),(2*?BYTE)).
--define(DNS_QUESTIONS_LEN(),(1*?BYTE)).
--define(DNS_NUM_ANSWERS_LEN(),(2*?BYTE)).
--define(DNS_NUM_AUTH_LEN(),(2*?BYTE)).
--define(DNS_NUM_ADD_LEN(),(2*?BYTE)).
--define(DNS_HEADER_LEN(),(?DNS_ID_LEN()+?DNS_FLAGS_LEN()+?DNS_NUM_QUESTIONS_LEN()+?DNS_NUM_ANSWERS_LEN()+?DNS_NUM_AUTH_LEN()+?DNS_NUM_ADD_LEN())).
+-define(BYTE,
+        8).
+-define(DNS_ID_LEN(),
+        (2*?BYTE)).
+-define(DNS_FLAGS_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_QUESTIONS_LEN(),
+        (2*?BYTE)).
+-define(DNS_QUESTIONS_LEN(),
+        (1*?BYTE)).
+-define(DNS_NUM_ANSWERS_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_AUTH_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_ADD_LEN(),
+        (2*?BYTE)).
+-define(DNS_HEADER_LEN(),
+        (?DNS_ID_LEN()+            \
+         ?DNS_FLAGS_LEN()+         \
+         ?DNS_NUM_QUESTIONS_LEN()+ \
+         ?DNS_NUM_ANSWERS_LEN()+   \
+         ?DNS_NUM_AUTH_LEN()+      \
+         ?DNS_NUM_ADD_LEN())).
 
-% hardcoded trivial values for this exercise
+% trivial values hardcoded
 %
--define(DNS_FLAGS,16#8180).
--define(DNS_NUM_AUTH,16#0000).
--define(DNS_ANSWER_TYPE,16#0001). %  A (host address)
--define(DNS_ANSWER_CLASS,16#0001). % IN
--define(DNS_ANSWER_TTL,16#0000000A). % 10 seconds
--define(DNS_ANSWER_DATA_LENGTH,16#0004). % 4 bytes (IPv4 address)
+-define(DNS_FLAGS,
+        16#8180).
+-define(DNS_NUM_AUTH,
+        16#0000). 
+-define(DNS_ANSWER_TYPE, % A (host address)
+        16#0001). 
+-define(DNS_ANSWER_CLASS, % IN
+        16#0001). 
+-define(DNS_ANSWER_TTL, % 10 seconds
+        16#0000000A). 
+-define(DNS_ANSWER_DATA_LENGTH, % % 4 bytes (IPv4 address)
+        16#0004). 
 
 dnsFilterCrLf(Data) ->
     re:replace(Data, "[\\n\\r]", "", [{return,list}]).
@@ -49,8 +69,8 @@ dnsGetHostsByFqdnChain([Fun | Funs], Arg) ->
 dnsGetHostsByFqdn(File) ->
     {ok, S} = file:open(File,read),
 
-    %% Function composition to build the map of hosts from the
-    %% configuration file
+    %% Function composition (chain): from a configuration file to
+    %% a map of hosts
     Chain = [fun dnsConvertFileToList/1,fun dnsConvertListToMap/1],
     dnsGetHostsByFqdnChain(Chain,S).
 
@@ -63,6 +83,9 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
 
     % The request
     %
+
+    % TODO: Just parse the header, and if the host if found,
+    %       use the fields. Use _ if it does not matter
     <<Dns_id:?DNS_ID_LEN(),
       Dns_flags:?DNS_FLAGS_LEN(),
       Dns_num_questions:?DNS_NUM_QUESTIONS_LEN(),
@@ -71,10 +94,11 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
       Dns_num_add:?DNS_NUM_ADD_LEN(),
       Dns_question/binary>> = SrcPacket,
 
-    <<Dns_question_len:?DNS_QUESTIONS_LEN(),
-      _/binary>> = Dns_question,
+    % Get the host name
+    %
+    <<Dns_question_len:?DNS_QUESTIONS_LEN(),_/binary>> = Dns_question,
     Dns_question_len_bytes = Dns_question_len*?BYTE,
-    <<_:?DNS_QUESTIONS_LEN(),
+    <<_len:?DNS_QUESTIONS_LEN(),
       Dns_question_name:Dns_question_len_bytes,_/binary>> = Dns_question,
 
     Name = binary_to_list(<<Dns_question_name:Dns_question_len_bytes>>),
@@ -100,9 +124,6 @@ dnsReceive(Socket,HostsByFqdn) ->
 
             dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket),
             dnsReceive(Socket,HostsByFqdn)
-            %% N = binary_to_term(SrcPacket),
-            %% Fac = fac(N),
-            %% gen_udp:send(Socket, Host, Port, term_to_binary(Fac)),
     end.
 
 run() ->
@@ -115,6 +136,7 @@ run() ->
     HostsByFqdn = dnsGetHostsByFqdn(File),
     
     % Start listening requests...
+    io:format("**DNS** server configured with:~p~n",[HostsByFqdn]),
     dnsServer(Port,HostsByFqdn).
 
 % Chain of responsibility in Erlang:
