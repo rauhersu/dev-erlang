@@ -6,21 +6,63 @@
 -module(dnsServer).
 -export([run/0]).
 
--define(BYTE,8).
--define(DNS_ID_LEN(),(2*?BYTE)).
--define(DNS_FLAGS_LEN(),(2*?BYTE)).
--define(DNS_NUM_QUESTIONS_LEN(),(2*?BYTE)).
--define(DNS_QUESTIONS_LEN(),(1*?BYTE)).
--define(DNS_NUM_ANSWERS_LEN(),(2*?BYTE)).
--define(DNS_NUM_AUTH_LEN(),(2*?BYTE)).
--define(DNS_NUM_ADD_LEN(),(2*?BYTE)).
--define(DNS_HEADER_LEN(),(?DNS_ID_LEN()+?DNS_FLAGS_LEN()+?DNS_NUM_QUESTIONS_LEN()+?DNS_NUM_ANSWERS_LEN()+?DNS_NUM_AUTH_LEN()+?DNS_NUM_ADD_LEN())).
+-define(BYTE,
+        8).
+-define(NULL_TERMINATION_LEN,
+        ?BYTE).
 
-% hardcoded trivial values for this exercise
+% DNS Query A Request
+%
+-define(DNS_ID_LEN(),
+        (2*?BYTE)).
+-define(DNS_FLAGS_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_QUESTIONS_LEN(),
+        (2*?BYTE)).
+-define(DNS_QUESTIONS_LEN(),
+        (1*?BYTE)).
+-define(DNS_QTYPE_LEN(),
+        (2*?BYTE)).
+-define(DNS_QCLASS_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_ANSWERS_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_AUTH_LEN(),
+        (2*?BYTE)).
+-define(DNS_NUM_ADD_LEN(),
+        (2*?BYTE)).
+-define(DNS_HEADER_LEN(),
+        (?DNS_ID_LEN()+
+         ?DNS_FLAGS_LEN()+
+         ?DNS_NUM_QUESTIONS_LEN()+
+         ?DNS_NUM_ANSWERS_LEN()+
+         ?DNS_NUM_AUTH_LEN()+
+         ?DNS_NUM_ADD_LEN())).
+
+% DNS Query A Response
+%
+-define(DNS_ANSWER_POINTER,
+        16#C0).
+-define(DNS_ANSWER_OFFSET(),
+        (?DNS_HEADER_LEN() div ?BYTE)).
+-define(DNS_ANSWER_TYPE_LEN(),
+        (2*?BYTE)).
+-define(DNS_ANSWER_CLASS_LEN(),
+        (2*?BYTE)).
+-define(DNS_ANSWER_TTL_LEN(),
+        (4*?BYTE)).
+-define(DNS_ANSWER_DATA_LENGTH_LEN(),
+        (2*?BYTE)).
+-define(DNS_ANSWER_ADDR_LEN(),
+        (4*?BYTE)).
+
+% hardcoded values for this exercise
 %
 -define(DNS_FLAGS,
         16#8180).
 -define(DNS_NUM_AUTH,
+        16#0000).
+-define(DNS_NUM_ADD,
         16#0000).
 -define(DNS_ANSWER_TYPE, % A (host address)
         16#0001).
@@ -31,8 +73,8 @@
 -define(DNS_ANSWER_DATA_LENGTH, % % 4 bytes (IPv4 address)
         16#0004).
 
-%% Function composition (chained functions)
-%%
+% An execution function for chained functions (composition)
+%
 chainExec([], Arg) ->
     Arg;
 chainExec([Fun | Funs], Arg) ->
@@ -54,8 +96,8 @@ dnsConvertListToMap([]) ->
 dnsConvertListToMap([Host|Hosts]) ->
     [Fqdn|Ips] = string:tokens(Host," "),
 
-    %% From IPs in a string form to a binary form.
-    %% Is there an shorter way??
+    % From IPs in a string form to a binary (<<...>> form.
+    % Is there a shorter way rather than 3 funs?!
     Chain = [fun dnsParseAddresss/1,
              fun tuple_to_list/1,
              fun list_to_binary/1],
@@ -67,8 +109,8 @@ dnsConvertListToMap([Host|Hosts]) ->
 dnsGetHostsByFqdn(File) ->
     {ok, S} = file:open(File,read),
 
-    %% From IPs in the configuration file to map of (Host,IPs)
-    %%
+    % From IPs in the configuration file to a map of Host -> IPs
+    %
     Chain = [fun dnsConvertFileToList/1,
              fun dnsConvertListToMap/1],
     chainExec(Chain,S).
@@ -77,6 +119,7 @@ dnsServer(Port,HostsByFqdn) ->
     {ok, Socket} = gen_udp:open(Port, [binary, {active,true}]),
     io:format("**DNS** server opened socket:~p~n",[Socket]),
     dnsReceive(Socket,HostsByFqdn).
+
 dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
 
     % The request
@@ -87,16 +130,64 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
       Dns_num_answers:?DNS_NUM_ANSWERS_LEN(),
       Dns_num_auth:?DNS_NUM_AUTH_LEN(),
       Dns_num_add:?DNS_NUM_ADD_LEN(),
-      Dns_question/binary>> = SrcPacket,
+      Dns_rest_of_msg/binary>> = SrcPacket,
 
-    <<Dns_question_len:?DNS_QUESTIONS_LEN(),_/binary>> = Dns_question,
-    Dns_question_len_bytes = Dns_question_len*?BYTE,
+    % get the host name
+    %
+    <<Dns_host_name_len_bytes:?DNS_QUESTIONS_LEN(),
+      _/binary>> = Dns_rest_of_msg,
+
+    Dns_host_name_len = Dns_host_name_len_bytes*?BYTE,
+
     <<_len:?DNS_QUESTIONS_LEN(),
-      Dns_question_name:Dns_question_len_bytes,_/binary>> = Dns_question,
+      Dns_host_name:Dns_host_name_len,_/binary>> = Dns_rest_of_msg,
 
-    Name = binary_to_list(<<Dns_question_name:Dns_question_len_bytes>>),
+    HostName = binary_to_list(<<Dns_host_name:Dns_host_name_len>>),
+    io:format("**DNS** queried: ~p~n",[HostName]),
 
-    io:format("**DNS** queried: ~p~n",[Name]),
+    % get the whole query A (host name + QTYPE + QCLASS))
+    %
+    Dns_queryA_len =
+        ?DNS_QUESTIONS_LEN()+
+        Dns_host_name_len+
+        ?NULL_TERMINATION_LEN+
+        ?DNS_QTYPE_LEN()+
+        ?DNS_QCLASS_LEN(),
+
+    <<Dns_queryA:Dns_queryA_len,
+      _/binary>> = Dns_rest_of_msg,
+
+    % The response
+    %
+    DstPacket = <<Dns_id:?DNS_ID_LEN(),
+                  ?DNS_FLAGS:?DNS_FLAGS_LEN(),
+                  1:16, % 1 Question
+                  1:16, % 1 Answer
+                  ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
+                  ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
+                  Dns_queryA:Dns_queryA_len,
+                  % Pointer to the hostname (already present in the queryA)
+                  % See 4.1.4 "Message compression" on RFC1035
+                  ?DNS_ANSWER_POINTER:?BYTE,
+                  % Offset for that pointer (hostname = pointerFromStart+offset)
+                  (?DNS_ANSWER_OFFSET()):?BYTE,
+                  ?DNS_ANSWER_TYPE:?DNS_ANSWER_TYPE_LEN(),
+                  ?DNS_ANSWER_CLASS:?DNS_ANSWER_CLASS_LEN(),
+                  ?DNS_ANSWER_TTL:?DNS_ANSWER_TTL_LEN(),
+                  ?DNS_ANSWER_DATA_LENGTH:?DNS_ANSWER_DATA_LENGTH_LEN(),
+                  <<192,168,2,1>>/binary,
+                  ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>,
+
+    io:format("**DNS** DstPacket:~p~n",[DstPacket]),
+
+    gen_udp:send(Socket, Host, Port, DstPacket).
+
+    % get the whole query A (host name + QTYPE + QCLASS))
+    %
+    %% Dns_queryA_len = ?DNS_QUESTIONS_LEN()+?DNS_QTYPE_LEN()+?DNS_QCLASS_LEN(),
+
+    %% <<Dns_queryA:Dns_queryA_len,
+    %%   _/binary>> = Dns_rest_of_msg.
 
     % The response
     %
@@ -111,18 +202,31 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
 
 %% Dns_flags
 
-    DstPacket = <<Dns_id:?DNS_ID_LEN(),
-                  ?DNS_FLAGS:?DNS_FLAGS_LEN(),
-                  1:16, % 1 Question
-                  1:16, % 1 Answer
-                  1:16,
-                  1:16,
-                  Dns_question_name:Dns_question_len_bytes,
-                  <<192,168,2,1>>/binary,
-                  Dns_num_auth:?DNS_NUM_AUTH_LEN(),
-                  Dns_num_add:?DNS_NUM_ADD_LEN()>>,
+    %% Dns_query_len = (erlang:byte_size(SrcPacket) - ?DNS_HEADER_LEN())*?BYTE,
 
-    gen_udp:send(Socket, Host, Port, DstPacket).
+    %% DstPacket = <<Dns_id:?DNS_ID_LEN(),
+    %%               ?DNS_FLAGS:?DNS_FLAGS_LEN(),
+    %%               1:16, % 1 Question
+    %%               1:16, % 1 Answer
+    %%               0:16, % Authority
+    %%               0:16, % Additional
+    %%               Dns_question/binary,
+    %%               1:?DNS_NUM_ANSWERS_LEN(),
+    %%               Dns_question_name:Dns_question_len_bytes,
+    %%               0:8,% Null terminated
+    %%               <<192,168,2,1>>/binary,
+    %%               ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
+    %%               ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
+    %%               ?DNS_ANSWER_TYPE:?DNS_ANSWER_TYPE_LEN(),
+    %%               ?DNS_ANSWER_CLASS:?DNS_ANSWER_CLASS_LEN(),
+    %%               ?DNS_ANSWER_TTL:?DNS_ANSWER_TTL_LEN(),
+    %%               ?DNS_ANSWER_DATA_LENGTH:?DNS_ANSWER_DATA_LENGTH_LEN(),
+    %%               0:32>>, % resource data address
+
+    %% io:format("**DNS** DstPacket:~p~n",[DstPacket]),
+
+    %% gen_udp:send(Socket, Host, Port, DstPacket).
+
 dnsReceive(Socket,HostsByFqdn) ->
     receive
         {udp, Socket, Host, Port, SrcPacket} = SrcData ->
@@ -130,9 +234,6 @@ dnsReceive(Socket,HostsByFqdn) ->
 
             dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket),
             dnsReceive(Socket,HostsByFqdn)
-            %% N = binary_to_term(SrcPacket),
-            %% Fac = fac(N),
-            %% gen_udp:send(Socket, Host, Port, term_to_binary(Fac)),
     end.
 
 run() ->
