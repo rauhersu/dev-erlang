@@ -182,51 +182,6 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
 
     gen_udp:send(Socket, Host, Port, DstPacket).
 
-    % get the whole query A (host name + QTYPE + QCLASS))
-    %
-    %% Dns_queryA_len = ?DNS_QUESTIONS_LEN()+?DNS_QTYPE_LEN()+?DNS_QCLASS_LEN(),
-
-    %% <<Dns_queryA:Dns_queryA_len,
-    %%   _/binary>> = Dns_rest_of_msg.
-
-    % The response
-    %
-%% DstPacket = <<Dns_id:?DNS_ID_LEN(),
-%%                   ?DNS_FLAGS:?DNS_FLAGS_LEN(),
-%%                   1:16,
-%%                   ?DNS_NUM_AUTH:?DNS_NUM_QUESTIONS_LEN(),
-%%                   ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
-%%                   Dns_num_add:?DNS_NUM_ADD_LEN(),
-%%               <<"192.168.2.1">>/binary>>,
-
-
-%% Dns_flags
-
-    %% Dns_query_len = (erlang:byte_size(SrcPacket) - ?DNS_HEADER_LEN())*?BYTE,
-
-    %% DstPacket = <<Dns_id:?DNS_ID_LEN(),
-    %%               ?DNS_FLAGS:?DNS_FLAGS_LEN(),
-    %%               1:16, % 1 Question
-    %%               1:16, % 1 Answer
-    %%               0:16, % Authority
-    %%               0:16, % Additional
-    %%               Dns_question/binary,
-    %%               1:?DNS_NUM_ANSWERS_LEN(),
-    %%               Dns_question_name:Dns_question_len_bytes,
-    %%               0:8,% Null terminated
-    %%               <<192,168,2,1>>/binary,
-    %%               ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
-    %%               ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
-    %%               ?DNS_ANSWER_TYPE:?DNS_ANSWER_TYPE_LEN(),
-    %%               ?DNS_ANSWER_CLASS:?DNS_ANSWER_CLASS_LEN(),
-    %%               ?DNS_ANSWER_TTL:?DNS_ANSWER_TTL_LEN(),
-    %%               ?DNS_ANSWER_DATA_LENGTH:?DNS_ANSWER_DATA_LENGTH_LEN(),
-    %%               0:32>>, % resource data address
-
-    %% io:format("**DNS** DstPacket:~p~n",[DstPacket]),
-
-    %% gen_udp:send(Socket, Host, Port, DstPacket).
-
 dnsReceive(Socket,HostsByFqdn) ->
     receive
         {udp, Socket, Host, Port, SrcPacket} = SrcData ->
@@ -249,19 +204,3 @@ run() ->
     io:format("**DNS** server configured with:~p~n",[HostsByFqdn]),
 
     dnsServer(Port,HostsByFqdn).
-% Chain of responsibility in Erlang:
-
-% http://www.erlangpatterns.org/chain.html
-
-% 1. Quieres llegar aquí:
-
-% 1.Necesitarás tokenizar cada elemento de la lista actual, 'tokens()'
-%   http://erlang.org/doc/man/string.html#words-1
-% 2.Necesitarás formar una lista de tuplas para aplicar '3'
-% 3.Aplica la conversión a map desde una lista de tuplas, 'fromlist()'
-%   http://erlang.org/doc/man/maps.html#from_list-1
-
-% TODO:
-% 1. Mira que la funcion que has hecho no es tail recursive, conviertela
-% 2. Cuando sea un tipo como singleton, usa 'The...' (ej, para el mapping de ficheros)
-% 3. El fichero de texto como parametro del argv ->
