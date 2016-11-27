@@ -1,4 +1,4 @@
-% M-x erlang-shell
+1% M-x erlang-shell
 % > cd('home/raul/my-lab/erlang/dev-erlang/').
 % > c(dnsServer).
 % > dnsServer:run().
@@ -83,6 +83,8 @@ chainExec([Fun | Funs], Arg) ->
 dnsFilterCrLf(Data) ->
     re:replace(Data, "[\\n\\r]", "", [{return,list}]).
 
+% TODO: TCO
+% 
 dnsConvertFileToList(S) ->
     case io:get_line(S, '') of
         eof -> [];
@@ -91,6 +93,9 @@ dnsConvertFileToList(S) ->
 dnsParseAddresss(Ip) ->
     element(2,inet:parse_address(Ip)).
 
+
+% TODO: TCO
+% 
 dnsConvertListToMap([]) ->
     #{};
 dnsConvertListToMap([Host|Hosts]) ->
@@ -115,10 +120,6 @@ dnsGetHostsByName(File) ->
              fun dnsConvertListToMap/1],
     chainExec(Chain,S).
 
-dnsServer(Port,HostsByName) ->
-    {ok, Socket} = gen_udp:open(Port, [binary, {active,true}]),
-    io:format("**DNS** server opened socket:~p~n",[Socket]),
-    dnsReceive(Socket,HostsByName).
 
 % Host found
 %
@@ -184,8 +185,7 @@ dnsSendAnswer(error,
       0:?DNS_NUM_ANSWERS_LEN(),   % TODO: a better value
       ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
       ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
-      Dns_queryA:Dns_queryA_len,
-      0:?DNS_NUM_ANSWERS_LEN()>>.
+      Dns_queryA:Dns_queryA_len>>.
 
 dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
 
@@ -223,6 +223,9 @@ dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
 
     gen_udp:send(Socket, Host, Port, DstPacket).
 
+
+% TODO: this is a sequential server: spawn a server per query
+%
 dnsReceive(Socket,HostsByName) ->
     receive
         {udp, Socket, Host, Port, SrcPacket} = SrcData ->
@@ -232,12 +235,19 @@ dnsReceive(Socket,HostsByName) ->
             dnsReceive(Socket,HostsByName)
     end.
 
+dnsServer(Port,HostsByName) ->
+    {ok, Socket} = gen_udp:open(Port, [binary, {active,true}]),
+    io:format("**DNS** server opened socket:~p~n",[Socket]),
+    dnsReceive(Socket,HostsByName).
+
 run() ->
     % Code and configuration file in the same dir (MODULE trick)
     File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
 
     % Port > 1024 for non root access (make sure not in use)
     Port = 3535,
+
+    io:format("**DNS** server port:~p file:~p~n",[Port,File]),
 
     HostsByName = dnsGetHostsByName(File),
 
