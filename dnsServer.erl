@@ -125,6 +125,8 @@ dnsServer(Port,HostsByName) ->
 dnsSendAnswer({ok,HostIPs},
               Dns_id,Dns_host_name,Dns_host_name_len,Dns_rest_of_msg) ->
 
+    io:format("**DNS** hostname found!~n"),
+
     % get the query A (host name + QTYPE + QCLASS))
     %
     Dns_queryA_len =
@@ -161,12 +163,12 @@ dnsSendAnswer({ok,HostIPs},
 dnsSendAnswer({badmap,_},
               Dns_id,Dns_host_name,Dns_host_name_len, Dns_rest_of_msg) ->
 
-    io:format("**DNS** hostname: ~p NOT FOUND!~n",[HostName]),
+    io:format("**DNS** hostname NOT found!~n"),
 
     <<Dns_id:?DNS_ID_LEN(),
       ?DNS_FLAGS:?DNS_FLAGS_LEN(),
       1:?DNS_NUM_QUESTIONS_LEN(),
-      0:?DNS_NUM_ANSWERS_LEN(),    % TODO: a better value
+      0:?DNS_NUM_ANSWERS_LEN()>>    % TODO: a better value
 .
 
 dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
