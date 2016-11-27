@@ -168,8 +168,9 @@ dnsSendAnswer(error,
     <<Dns_id:?DNS_ID_LEN(),
       ?DNS_FLAGS:?DNS_FLAGS_LEN(),
       1:?DNS_NUM_QUESTIONS_LEN(),
-      0:?DNS_NUM_ANSWERS_LEN()>>    % TODO: a better value
-.
+      0:?DNS_NUM_ANSWERS_LEN(),   % TODO: a better value
+      ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
+      ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>.
 
 dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
 
