@@ -73,7 +73,7 @@
 -define(DNS_ANSWER_DATA_LENGTH, % % 4 bytes (IPv4 address)
         16#0004).
 
-% An execution function for chained functions (composition)
+% Executes a composition of functions
 %
 chainExec([], Arg) ->
     Arg;
@@ -94,9 +94,9 @@ dnsParseAddresss(Ip) ->
 dnsConvertListToMap([]) ->
     #{};
 dnsConvertListToMap([Host|Hosts]) ->
-    [Fqdn|Ips] = string:tokens(Host," "),
+    [Name|Ips] = string:tokens(Host," "),
 
-    % From IPs in a string form to a binary (<<...>> form.
+    % Composes Ips in a binary (<<...>>) form.
     % Is there a shorter way rather than 3 funs?!
     Chain = [fun dnsParseAddresss/1,
              fun tuple_to_list/1,
@@ -104,32 +104,78 @@ dnsConvertListToMap([Host|Hosts]) ->
     Fun = fun (X) -> chainExec(Chain,X) end,
 
     IpsToBinaries = lists:map(Fun,Ips),
-    maps:put(Fqdn,IpsToBinaries,dnsConvertListToMap(Hosts)).
+    maps:put(Name,IpsToBinaries,dnsConvertListToMap(Hosts)).
 
-dnsGetHostsByFqdn(File) ->
+dnsGetHostsByName(File) ->
     {ok, S} = file:open(File,read),
 
-    % From IPs in the configuration file to a map of Host -> IPs
+    % Composes a map of Host -> IPs
     %
     Chain = [fun dnsConvertFileToList/1,
              fun dnsConvertListToMap/1],
     chainExec(Chain,S).
 
-dnsServer(Port,HostsByFqdn) ->
+dnsServer(Port,HostsByName) ->
     {ok, Socket} = gen_udp:open(Port, [binary, {active,true}]),
     io:format("**DNS** server opened socket:~p~n",[Socket]),
-    dnsReceive(Socket,HostsByFqdn).
+    dnsReceive(Socket,HostsByName).
 
-dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
+% Host found
+%
+dnsSendAnswer({ok,HostIPs},
+              Dns_id,Dns_host_name,Dns_host_name_len,Dns_rest_of_msg) ->
+
+    % get the query A (host name + QTYPE + QCLASS))
+    %
+    Dns_queryA_len =
+        ?DNS_QUESTIONS_LEN()+
+        Dns_host_name_len+
+        ?NULL_TERMINATION_LEN+
+        ?DNS_QTYPE_LEN()+
+        ?DNS_QCLASS_LEN(),
+
+    <<Dns_queryA:Dns_queryA_len,
+      _/binary>> = Dns_rest_of_msg,
+    
+    <<Dns_id:?DNS_ID_LEN(),
+      ?DNS_FLAGS:?DNS_FLAGS_LEN(),
+      1:?DNS_NUM_QUESTIONS_LEN(),
+      1:?DNS_NUM_ANSWERS_LEN(),
+      ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
+      ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
+      Dns_queryA:Dns_queryA_len,
+      % Pointer to the hostname (it is present in the queryA)
+      % See 4.1.4 "Message compression" on RFC1035
+      ?DNS_ANSWER_POINTER:?BYTE,
+      % Offset for that pointer (hostname = pointerFromStart+offset)
+      ?DNS_ANSWER_OFFSET():?BYTE,
+      ?DNS_ANSWER_TYPE:?DNS_ANSWER_TYPE_LEN(),
+      ?DNS_ANSWER_CLASS:?DNS_ANSWER_CLASS_LEN(),
+      ?DNS_ANSWER_TTL:?DNS_ANSWER_TTL_LEN(),
+      ?DNS_ANSWER_DATA_LENGTH:?DNS_ANSWER_DATA_LENGTH_LEN(),
+      <<192,168,2,1>>/binary,
+      ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>;
+
+% Host not found
+%
+dnsSendAnswer({badmap,_},
+              Dns_id,Dns_host_name,Dns_host_name_len, Dns_rest_of_msg) ->
+
+    io:format("**DNS** hostname: ~p NOT FOUND!~n",[HostName]),
+
+    <<Dns_id:?DNS_ID_LEN(),
+      ?DNS_FLAGS:?DNS_FLAGS_LEN(),
+      1:?DNS_NUM_QUESTIONS_LEN(),
+      0:?DNS_NUM_ANSWERS_LEN(),    % TODO: a better value
+.
+
+dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
 
     % The request
     %
     <<Dns_id:?DNS_ID_LEN(),
-      Dns_flags:?DNS_FLAGS_LEN(),
-      Dns_num_questions:?DNS_NUM_QUESTIONS_LEN(),
-      Dns_num_answers:?DNS_NUM_ANSWERS_LEN(),
-      Dns_num_auth:?DNS_NUM_AUTH_LEN(),
-      Dns_num_add:?DNS_NUM_ADD_LEN(),
+      _Dns_flags_questions_answers_numauth_numadd:(?DNS_HEADER_LEN()-
+                                                       ?DNS_ID_LEN()),
       Dns_rest_of_msg/binary>> = SrcPacket,
 
     % get the host name
@@ -145,62 +191,39 @@ dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket) ->
     HostName = binary_to_list(<<Dns_host_name:Dns_host_name_len>>),
     io:format("**DNS** queried: ~p~n",[HostName]),
 
-    % get the whole query A (host name + QTYPE + QCLASS))
-    %
-    Dns_queryA_len =
-        ?DNS_QUESTIONS_LEN()+
-        Dns_host_name_len+
-        ?NULL_TERMINATION_LEN+
-        ?DNS_QTYPE_LEN()+
-        ?DNS_QCLASS_LEN(),
-
-    <<Dns_queryA:Dns_queryA_len,
-      _/binary>> = Dns_rest_of_msg,
+    HostInfo = maps:find(HostName,HostsByName),
 
     % The response
     %
-    DstPacket = <<Dns_id:?DNS_ID_LEN(),
-                  ?DNS_FLAGS:?DNS_FLAGS_LEN(),
-                  1:16, % 1 Question
-                  1:16, % 1 Answer
-                  ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
-                  ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
-                  Dns_queryA:Dns_queryA_len,
-                  % Pointer to the hostname (already present in the queryA)
-                  % See 4.1.4 "Message compression" on RFC1035
-                  ?DNS_ANSWER_POINTER:?BYTE,
-                  % Offset for that pointer (hostname = pointerFromStart+offset)
-                  (?DNS_ANSWER_OFFSET()):?BYTE,
-                  ?DNS_ANSWER_TYPE:?DNS_ANSWER_TYPE_LEN(),
-                  ?DNS_ANSWER_CLASS:?DNS_ANSWER_CLASS_LEN(),
-                  ?DNS_ANSWER_TTL:?DNS_ANSWER_TTL_LEN(),
-                  ?DNS_ANSWER_DATA_LENGTH:?DNS_ANSWER_DATA_LENGTH_LEN(),
-                  <<192,168,2,1>>/binary,
-                  ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>,
+    DstPacket = dnsSendAnswer(HostInfo,
+                              Dns_id,
+                              Dns_host_name,
+                              Dns_host_name_len,
+                              Dns_rest_of_msg),
 
     io:format("**DNS** DstPacket:~p~n",[DstPacket]),
 
     gen_udp:send(Socket, Host, Port, DstPacket).
 
-dnsReceive(Socket,HostsByFqdn) ->
+dnsReceive(Socket,HostsByName) ->
     receive
         {udp, Socket, Host, Port, SrcPacket} = SrcData ->
             io:format("**DNS** server received:~p~n",[SrcData]),
 
-            dnsSend(Socket,HostsByFqdn,Host,Port,SrcPacket),
-            dnsReceive(Socket,HostsByFqdn)
+            dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket),
+            dnsReceive(Socket,HostsByName)
     end.
 
 run() ->
     % Code and configuration file in the same dir (MODULE trick)
     File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
 
-    % Port > 1024 for non root testing. Make sure not in use
+    % Port > 1024 for non root access (make sure not in use)
     Port = 3535,
 
-    HostsByFqdn = dnsGetHostsByFqdn(File),
+    HostsByName = dnsGetHostsByName(File),
 
     % Start listening requests...
-    io:format("**DNS** server configured with:~p~n",[HostsByFqdn]),
+    io:format("**DNS** server configured with:~p~n",[HostsByName]),
 
-    dnsServer(Port,HostsByFqdn).
+    dnsServer(Port,HostsByName).
