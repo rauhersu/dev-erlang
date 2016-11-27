@@ -165,12 +165,27 @@ dnsSendAnswer(error,
 
     io:format("**DNS** hostname NOT found!~n"),
 
+
+    % get the query A (host name + QTYPE + QCLASS))
+    %
+    Dns_queryA_len =
+        ?DNS_QUESTIONS_LEN()+
+        Dns_host_name_len+
+        ?NULL_TERMINATION_LEN+
+        ?DNS_QTYPE_LEN()+
+        ?DNS_QCLASS_LEN(),
+
+    <<Dns_queryA:Dns_queryA_len,
+      _/binary>> = Dns_rest_of_msg,
+
     <<Dns_id:?DNS_ID_LEN(),
       ?DNS_FLAGS:?DNS_FLAGS_LEN(),
       1:?DNS_NUM_QUESTIONS_LEN(),
       0:?DNS_NUM_ANSWERS_LEN(),   % TODO: a better value
       ?DNS_NUM_AUTH:?DNS_NUM_AUTH_LEN(),
-      ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>.
+      ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
+      Dns_queryA:Dns_queryA_len,
+      0:?DNS_NUM_ANSWERS_LEN()>>.
 
 dnsProcessQueryA(Socket,HostsByName,Host,Port,SrcPacket) ->
 
