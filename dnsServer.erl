@@ -160,7 +160,7 @@ dnsSendAnswer({ok,HostIPs},
 
 % Host not found
 %
-dnsSendAnswer({badmap,_},
+dnsSendAnswer(error,
               Dns_id,Dns_host_name,Dns_host_name_len, Dns_rest_of_msg) ->
 
     io:format("**DNS** hostname NOT found!~n"),
