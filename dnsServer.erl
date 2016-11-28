@@ -4,7 +4,7 @@
 % > dnsServer:run().
 
 -module(dnsServer).
--export([run/0]).
+-export([run/1]).
 
 -define(BYTE,
         8).
@@ -244,7 +244,7 @@ dns_receive(Socket,Hosts_by_name) ->
                                                 Port,
                                           Src_packet) end,
 
-            _Pid = spawn(Fun),% Spawns one process per query
+            _Pid = spawn(Fun), % Spawns one process per query
             dns_receive(Socket,Hosts_by_name)
     end.
 
@@ -253,12 +253,9 @@ dns_server(Port,Hosts_by_name) ->
     io:format("**DNS** server opened socket:~p~n",[Socket]),
     dns_receive(Socket,Hosts_by_name).
 
-run() ->
+run(Port) ->
     % Code and configuration file in the same dir (MODULE trick)
     File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
-
-    % Port > 1024 for non root access (make sure not in use)
-    Port = 3535,
 
     io:format("**DNS** server port:~p file:~p~n",[Port,File]),
 
