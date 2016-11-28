@@ -1,4 +1,4 @@
-1% M-x erlang-shell
+% M-x erlang-shell
 % > cd('home/raul/my-lab/erlang/dev-erlang/').
 % > c(dnsServer).
 % > dnsServer:run().
