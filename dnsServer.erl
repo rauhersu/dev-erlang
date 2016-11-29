@@ -123,10 +123,10 @@ dns_get_hosts_by_name(File) ->
              fun dns_convert_list_to_map/1],
     chain_exec(Chain,S).
 
-dns_compose_queryA_header_and_question(Dns_id,
-                                       Dns_num_answers,
-                                       Dns_queryA,
-                                       Dns_queryA_len) ->
+dns_encode_queryA_header_and_question(Dns_id,
+                                      Dns_num_answers,
+                                      Dns_queryA,
+                                      Dns_queryA_len) ->
 
     <<Dns_id:?DNS_ID_LEN(),
       ?DNS_FLAGS:?DNS_FLAGS_LEN(),
@@ -136,9 +136,9 @@ dns_compose_queryA_header_and_question(Dns_id,
       ?DNS_NUM_ADD:?DNS_NUM_ADD_LEN(),
       Dns_queryA:Dns_queryA_len>>.
 
-dns_compose_queryA_answers(Host_ips) ->
+dns_encode_queryA_answers(Host_ips) ->
 
-    Dns_compose_one_queryA_answer = fun (Host_ip) ->
+    Dns_encode_one_queryA_answer = fun (Host_ip) ->
       % Pointer to the hostname (it is already present in the queryA segment)
       % See 4.1.4 "Message compression" on RFC1035
       <<?DNS_ANSWER_POINTER:?BYTE,
@@ -151,14 +151,14 @@ dns_compose_queryA_answers(Host_ips) ->
         Host_ip/binary>> end,
 
     All_QueryA_answers =
-        erlang:iolist_to_binary(lists:map(Dns_compose_one_queryA_answer,
-                                                              Host_ips)),
+        erlang:iolist_to_binary(lists:map(Dns_encode_one_queryA_answer,
+                                                            Host_ips)),
 
     _All_QueryA_answers_plus_add = erlang:iolist_to_binary([All_QueryA_answers,
                                          <<?DNS_NUM_ADD:?DNS_NUM_ADD_LEN()>>]).
 % Host found
 %
-dns_compose_queryA_response({ok,Host_ips},
+dns_encode_queryA_response({ok,Host_ips},
                             Dns_id,Dns_queryA,Dns_queryA_len) ->
 
     io:format("**DNS** hostname found!~n"),
@@ -166,28 +166,28 @@ dns_compose_queryA_response({ok,Host_ips},
     Num_answers = erlang:length(Host_ips),
 
     QueryA_header_and_question =
-        dns_compose_queryA_header_and_question(Dns_id,
+        dns_encode_queryA_header_and_question(Dns_id,
                                           Num_answers,
                                            Dns_queryA,
                                       Dns_queryA_len),
 
-    QueryA_anwers = dns_compose_queryA_answers(Host_ips),
+    QueryA_anwers = dns_encode_queryA_answers(Host_ips),
     _QueryA_response =
         erlang:iolist_to_binary([QueryA_header_and_question,QueryA_anwers]);
 
 % Host not found
 %
-dns_compose_queryA_response(error,
-                            Dns_id,Dns_queryA,Dns_queryA_len) ->
+dns_encode_queryA_response(error,
+                           Dns_id,Dns_queryA,Dns_queryA_len) ->
 
     io:format("**DNS** hostname NOT found!~n"),
 
-    _QueryA_response = dns_compose_queryA_header_and_question(Dns_id,
-                                                    ?DNS_ANSWER_ZERO,
-                                                          Dns_queryA,
+    _QueryA_response = dns_encode_queryA_header_and_question(Dns_id,
+                                                   ?DNS_ANSWER_ZERO,
+                                                         Dns_queryA,
                                                      Dns_queryA_len).
 
-dns_process_QueryA(Socket,Hosts_by_name,Host,Port,Src_packet) ->
+dns_decode_queryA_request(Socket,Hosts_by_name,Host,Port,Src_packet) ->
 
     % The request
     %
@@ -224,10 +224,10 @@ dns_process_QueryA(Socket,Hosts_by_name,Host,Port,Src_packet) ->
 
     % The response
     %
-    Dst_packet = dns_compose_queryA_response(Host_ips,
-                                               Dns_id,
-                                           Dns_queryA,
-                                      Dns_queryA_len),
+    Dst_packet = dns_encode_queryA_response(Host_ips,
+                                              Dns_id,
+                                          Dns_queryA,
+                                     Dns_queryA_len),
 
     io:format("**DNS** Dst_packet:~p~n",[Dst_packet]),
 
@@ -238,11 +238,11 @@ dns_receive(Socket,Hosts_by_name) ->
         {udp, Socket, Host, Port, Src_packet} = Src_Data ->
             io:format("**DNS** server received:~p~n",[Src_Data]),
 
-            Fun = fun() -> dns_process_QueryA(Socket,
-                                       Hosts_by_name,
-                                                Host,
-                                                Port,
-                                          Src_packet) end,
+            Fun = fun() -> dns_decode_queryA_request(Socket,
+                                              Hosts_by_name,
+                                                       Host,
+                                                       Port,
+                                            Src_packet) end,
 
             _Pid = spawn(Fun), % Spawns one process per query
             dns_receive(Socket,Hosts_by_name)
