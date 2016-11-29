@@ -77,6 +77,56 @@
 -define(DNS_ANSWER_DATA_LENGTH, % % 4 bytes (IPv4 address)
         16#0004).
 
+-include_lib("stdlib/include/qlc.hrl").
+-record(dns_queryA_response_TABLE, {hostname, responses}).
+
+dns_db_init() ->
+    mnesia:create_schema([node()]),
+    mnesia:start(),
+    mnesia:create_table(dns_queryA_response_TABLE,
+                        [{attributes, record_info(fields,
+                                                  dns_queryA_response_TABLE)}]),
+    mnesia:stop().
+
+dns_db_start() ->
+    mnesia:start(),
+    mnesia:wait_for_tables([dns_queryA_response_TABLE], 20000).
+
+
+%% dns_format_queryA_response_TABLE()->
+%%     io:format("HOSTNAME ** hostname:~p found!~n",
+%%                RESPONSES [Hostname]),
+
+dns_db_show_queryA_response() ->
+
+    %% io:format("~-15s ~-15s ~n~-15s ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
+    do(qlc:q([X || X <- mnesia:table(dns_queryA_response_TABLE)])).
+
+dns_db_add_queryA_response(Hostname) ->
+    Fun = fun() ->
+                  [Host] = mnesia:read({dns_queryA_response_TABLE,Hostname}),
+                  Host_responses = Host#dns_queryA_response_TABLE.responses,
+                  Host_responses_now =
+                      Host#dns_queryA_response_TABLE{responses =
+                                                         Host_responses+1},
+                  mnesia:write(Host_responses_now)
+          end,
+    mnesia:transaction(Fun).
+
+dns_db_provision(Hosts_by_name) ->
+    Hostnames = maps:keys(Hosts_by_name),
+    Fun_populate = fun(Hostname) ->
+                           {dns_queryA_response_TABLE,Hostname,_Response=0} end,
+    Rows = lists:map(Fun_populate, Hostnames),
+
+    Fun = fun() -> lists:foreach(fun mnesia:write/1, Rows) end,
+    mnesia:transaction(Fun).
+
+do(Q) ->
+    F = fun() -> qlc:e(Q) end,
+    {atomic, Val} = mnesia:transaction(F),
+    Val.
+
 % Executes a composition of functions
 %
 chain_exec([], Arg) ->
@@ -159,9 +209,12 @@ dns_encode_queryA_answers(Host_ips) ->
 % Host found
 %
 dns_encode_queryA_response({ok,Host_ips},
-                            Dns_id,Dns_queryA,Dns_queryA_len) ->
+                            Hostname,Dns_id,Dns_queryA,Dns_queryA_len) ->
 
-    io:format("**DNS** hostname found!~n"),
+    io:format("**DNS** hostname:~p found!~n",[Hostname]),
+
+    dns_db_add_queryA_response(Hostname),
+    %%io:format("**DNS** database:~p !~n",[dns_db_show_queryA_response()]),
 
     Num_answers = erlang:length(Host_ips),
 
@@ -178,9 +231,9 @@ dns_encode_queryA_response({ok,Host_ips},
 % Host not found
 %
 dns_encode_queryA_response(error,
-                           Dns_id,Dns_queryA,Dns_queryA_len) ->
+                           Hostname,Dns_id,Dns_queryA,Dns_queryA_len) ->
 
-    io:format("**DNS** hostname NOT found!~n"),
+    io:format("**DNS** hostname:~p NOT found!~n",[Hostname]),
 
     _QueryA_response = dns_encode_queryA_header_and_question(Dns_id,
                                                    ?DNS_ANSWER_ZERO,
@@ -198,23 +251,23 @@ dns_decode_queryA_request(Socket,Hosts_by_name,Host,Port,Src_packet) ->
 
     % Obtain the host name
     %
-    <<Dns_host_name_len_bytes:?DNS_QUESTIONS_LEN(),
+    <<Dns_hostname_len_bytes:?DNS_QUESTIONS_LEN(),
       _/binary>> = Dns_rest_of_msg,
 
-    Dns_host_name_len = Dns_host_name_len_bytes*?BYTE,
+    Dns_hostname_len = Dns_hostname_len_bytes*?BYTE,
 
     <<_len:?DNS_QUESTIONS_LEN(),
-      Dns_host_name:Dns_host_name_len,_/binary>> = Dns_rest_of_msg,
+      Dns_hostname:Dns_hostname_len,_/binary>> = Dns_rest_of_msg,
 
-    Host_name = binary_to_list(<<Dns_host_name:Dns_host_name_len>>),
-    io:format("**DNS** queried: ~p~n",[Host_name]),
+    Hostname = binary_to_list(<<Dns_hostname:Dns_hostname_len>>),
+    io:format("**DNS** queried: ~p~n",[Hostname]),
 
-    Host_ips = maps:find(Host_name,Hosts_by_name),
+    Host_ips = maps:find(Hostname,Hosts_by_name),
 
     % Obtain the query A (host name + QTYPE + QCLASS))
     %
     Dns_queryA_len = ?DNS_QUESTIONS_LEN()+
-                        Dns_host_name_len+
+                        Dns_hostname_len+
                     ?NULL_TERMINATION_LEN+
                          ?DNS_QTYPE_LEN()+
                         ?DNS_QCLASS_LEN(),
@@ -225,6 +278,7 @@ dns_decode_queryA_request(Socket,Hosts_by_name,Host,Port,Src_packet) ->
     % The response
     %
     Dst_packet = dns_encode_queryA_response(Host_ips,
+                                            Hostname,
                                               Dns_id,
                                           Dns_queryA,
                                      Dns_queryA_len),
@@ -254,6 +308,7 @@ dns_server(Port,Hosts_by_name) ->
     dns_receive(Socket,Hosts_by_name).
 
 run(Port) ->
+
     % Code and configuration file in the same dir (MODULE trick)
     File = filename:join(filename:dirname(code:which(?MODULE)),"dns.hosts.txt"),
 
@@ -264,4 +319,10 @@ run(Port) ->
     % Start listening requests...
     io:format("**DNS** server configured with:~p~n",[Hosts_by_name]),
 
+    dns_db_init(),
+    dns_db_start(),
+    dns_db_provision(Hosts_by_name),
+
     dns_server(Port,Hosts_by_name).
+
+%%http://blog.rusty.io/2011/01/13/beautiful-erlang-print/
