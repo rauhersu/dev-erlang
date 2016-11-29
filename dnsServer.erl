@@ -85,7 +85,7 @@ chain_exec([Fun | Funs], Arg) ->
     chain_exec(Funs, Fun(Arg)).
 
 dns_filter_cr_lf(Data) ->
-    re:replace(Data, "[\\n\\r]", "", [{return,list}]).
+    re:replace(Data, "[\\r\\n]", "", [{return,list}]).
 
 % TODO: TCO
 %
