@@ -100,6 +100,7 @@ dns_db_start() ->
 dns_db_show_queryA_response() ->
 
     %% io:format("~-15s ~-15s ~n~-15s ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
+    %% io:format("~-15s : ~-15s ~n~-15s : ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
     do(qlc:q([X || X <- mnesia:table(dns_queryA_response_TABLE)])).
 
 dns_db_add_queryA_response(Hostname) ->
