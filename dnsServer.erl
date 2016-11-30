@@ -96,36 +96,36 @@ dns_db_start() ->
 %% dns_format_queryA_response_TABLE()->
 %%     io:format("HOSTNAME ** hostname:~p found!~n",
 %%                RESPONSES [Hostname]),
+%% io:format("~-15s ~-15s ~n~-15s ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
+%% io:format("~-15s : ~-15s ~n~-15s : ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
 
 dns_db_show_queryA_response() ->
 
-    %% io:format("~-15s ~-15s ~n~-15s ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
-    %% io:format("~-15s : ~-15s ~n~-15s : ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
     do(qlc:q([X || X <- mnesia:table(dns_queryA_response_TABLE)])).
 
 dns_db_add_queryA_response(Hostname) ->
-    Fun = fun() ->
-                  [Host] = mnesia:read({dns_queryA_response_TABLE,Hostname}),
-                  Host_responses = Host#dns_queryA_response_TABLE.responses,
-                  Host_responses_now =
-                      Host#dns_queryA_response_TABLE{responses =
-                                                         Host_responses+1},
-                  mnesia:write(Host_responses_now)
-          end,
-    mnesia:transaction(Fun).
+    Transaction = 
+        fun() ->
+                [Host] = mnesia:read({dns_queryA_response_TABLE,Hostname}),
+                Host_responses = Host#dns_queryA_response_TABLE.responses,
+                Host_responses_now = Host#dns_queryA_response_TABLE{responses =
+                                                              Host_responses+1},
+                mnesia:write(Host_responses_now)
+        end,
+    mnesia:transaction(Transaction).
 
 dns_db_provision(Hosts_by_name) ->
     Hostnames = maps:keys(Hosts_by_name),
-    Fun_populate = fun(Hostname) ->
-                           {dns_queryA_response_TABLE,Hostname,_Response=0} end,
-    Rows = lists:map(Fun_populate, Hostnames),
+    Populate = fun(Hostname) ->
+                       {dns_queryA_response_TABLE,Hostname,_Response=0} end,
+    Rows = lists:map(Populate, Hostnames),
 
-    Fun = fun() -> lists:foreach(fun mnesia:write/1, Rows) end,
-    mnesia:transaction(Fun).
+    Transaction = fun() -> lists:foreach(fun mnesia:write/1, Rows) end,
+    mnesia:transaction(Transaction).
 
 do(Q) ->
-    F = fun() -> qlc:e(Q) end,
-    {atomic, Val} = mnesia:transaction(F),
+    Transaction = fun() -> qlc:e(Q) end,
+    {atomic, Val} = mnesia:transaction(Transaction),
     Val.
 
 % Executes a composition of functions
@@ -275,6 +275,7 @@ dns_decode_queryA_request(Socket,Hosts_by_name,Host,Port,Src_packet) ->
 
     <<Dns_queryA:Dns_queryA_len,
       _/binary>> = Dns_rest_of_msg,
+
 
     % The response
     %
