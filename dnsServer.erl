@@ -92,19 +92,20 @@ dns_db_start() ->
     mnesia:start(),
     mnesia:wait_for_tables([dns_queryA_response_TABLE], 20000).
 
+dns_format_queryA_response_TABLE(Rows)->
+    Fun = fun (Row) ->
+                  io:format("~-15s : ~-50s ~n~-15s : ~15p ~n~n",
+                            ["HOSTNAME",Row#dns_queryA_response_TABLE.hostname,
+                             "RESPONSES",Row#dns_queryA_response_TABLE.responses])
+          end,
+    lists:map(Fun, Rows).
 
-%% dns_format_queryA_response_TABLE()->
-%%     io:format("HOSTNAME ** hostname:~p found!~n",
-%%                RESPONSES [Hostname]),
-%% io:format("~-15s ~-15s ~n~-15s ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
-%% io:format("~-15s : ~-15s ~n~-15s : ~15p ~n",["HOSTNAME","ericsson","RESPONSES",2]).
-
-dns_db_show_queryA_response() ->
-
-    do(qlc:q([X || X <- mnesia:table(dns_queryA_response_TABLE)])).
+dns_db_show_queryA_response(Format) ->
+    _Rows = do(qlc:q([X || X <- mnesia:table(dns_queryA_response_TABLE)])),
+    Format(_Rows).
 
 dns_db_add_queryA_response(Hostname) ->
-    Transaction = 
+    Transaction =
         fun() ->
                 [Host] = mnesia:read({dns_queryA_response_TABLE,Hostname}),
                 Host_responses = Host#dns_queryA_response_TABLE.responses,
@@ -215,7 +216,6 @@ dns_encode_queryA_response({ok,Host_ips},
     io:format("**DNS** hostname:~p found!~n",[Hostname]),
 
     dns_db_add_queryA_response(Hostname),
-    %%io:format("**DNS** database:~p !~n",[dns_db_show_queryA_response()]),
 
     Num_answers = erlang:length(Host_ips),
 
